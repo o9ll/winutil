@@ -24,64 +24,14 @@ function Invoke-WinUtilAssets {
 
   switch ($type) {
       'logo' {
-          $LogoPathData1 = @"
-M 18.00,14.00
-C 18.00,14.00 45.00,27.74 45.00,27.74
-45.00,27.74 57.40,34.63 57.40,34.63
-57.40,34.63 59.00,43.00 59.00,43.00
-59.00,43.00 59.00,83.00 59.00,83.00
-55.35,81.66 46.99,77.79 44.72,74.79
-41.17,70.10 42.01,59.80 42.00,54.00
-42.00,51.62 42.20,48.29 40.98,46.21
-38.34,41.74 25.78,38.60 21.28,33.79
-16.81,29.02 18.00,20.20 18.00,14.00 Z
+          $LogoPathData = @"
+M118.5 44.7a69 69 0 0 1-11 35.4L83 119.8H69.8l26-40.2a18 18 0 0 1-11.1 3.8 27 27 0 0 1-19.5-8l.1 3c0 25.2-11.9 43.3-30.3 43.3-19 0-30.5-18.1-30.5-43.2 0-25.3 11.6-43.2 30.5-43.2q12.3.2 20 9.2c.2-23 13-40.2 32-40.2 19.9 0 31.5 17.5 31.5 40.4M54 78.5c0-18.4-6.1-31.8-19-31.8S15.8 60.1 15.8 78.5c0 18.6 6.2 31.8 19.2 31.8S54 97 54 78.5m53.6-33.8c0-15.6-7.2-29-20.5-29-13.1 0-20.8 13.4-20.8 29.4 0 15.8 7.3 28.6 20.5 28.6 13 0 20.8-13.8 20.8-29
 "@
-          $LogoPath1 = New-Object Windows.Shapes.Path
-          $LogoPath1.Data = [Windows.Media.Geometry]::Parse($LogoPathData1)
-          $LogoPath1.Fill = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#0567ff")
+          $LogoPath = New-Object Windows.Shapes.Path
+          $LogoPath.Data = [Windows.Media.Geometry]::Parse($LogoPathData)
+          $LogoPath.Fill = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#49A1b9")
 
-          $LogoPathData2 = @"
-M 107.00,14.00
-C 109.01,19.06 108.93,30.37 104.66,34.21
-100.47,37.98 86.38,43.10 84.60,47.21
-83.94,48.74 84.01,51.32 84.00,53.00
-83.97,57.04 84.46,68.90 83.26,72.00
-81.06,77.70 72.54,81.42 67.00,83.00
-67.00,83.00 67.00,43.00 67.00,43.00
-67.00,43.00 67.99,35.63 67.99,35.63
-67.99,35.63 80.00,28.26 80.00,28.26
-80.00,28.26 107.00,14.00 107.00,14.00 Z
-"@
-          $LogoPath2 = New-Object Windows.Shapes.Path
-          $LogoPath2.Data = [Windows.Media.Geometry]::Parse($LogoPathData2)
-          $LogoPath2.Fill = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#0567ff")
-
-          $LogoPathData3 = @"
-M 19.00,46.00
-C 21.36,47.14 28.67,50.71 30.01,52.63
-31.17,54.30 30.99,57.04 31.00,59.00
-31.04,65.41 30.35,72.16 33.56,78.00
-38.19,86.45 46.10,89.04 54.00,93.31
-56.55,94.69 60.10,97.20 63.00,97.22
-65.50,97.24 68.77,95.36 71.00,94.25
-76.42,91.55 84.51,87.78 88.82,83.68
-94.56,78.20 95.96,70.59 96.00,63.00
-96.01,60.24 95.59,54.63 97.02,52.39
-98.80,49.60 103.95,47.87 107.00,47.00
-107.00,47.00 107.00,67.00 107.00,67.00
-106.90,87.69 96.10,93.85 80.00,103.00
-76.51,104.98 66.66,110.67 63.00,110.52
-60.33,110.41 55.55,107.53 53.00,106.25
-46.21,102.83 36.63,98.57 31.04,93.68
-16.88,81.28 19.00,62.88 19.00,46.00 Z
-"@
-          $LogoPath3 = New-Object Windows.Shapes.Path
-          $LogoPath3.Data = [Windows.Media.Geometry]::Parse($LogoPathData3)
-          $LogoPath3.Fill = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#a3a4a6")
-
-          $canvas.Children.Add($LogoPath1) | Out-Null
-          $canvas.Children.Add($LogoPath2) | Out-Null
-          $canvas.Children.Add($LogoPath3) | Out-Null
+          $canvas.Children.Add($LogoPath) | Out-Null
       }
       'checkmark' {
           $canvas.Width = 512
