@@ -21,6 +21,9 @@ function Invoke-WinUtilTweaks {
         $KeepServiceStartup = $true
     )
 
+    $action = if ($undo) { "Undo" } else { "Apply" }
+    Write-WinUtilLog -Component "Tweaks" -Message "$action tweak: $CheckBox"
+
     if ($undo) {
         $Values = @{
             Registry = "OriginalValue"
@@ -75,6 +78,8 @@ function Invoke-WinUtilTweaks {
             $sync.configs.tweaks.$CheckBox.appx | ForEach-Object {
                 Remove-WinUtilAPPX -Name $psitem
             }
+            Remove-WinUtilProvisionedAPPX -PackageList $sync.configs.tweaks.$CheckBox.appx
         }
     }
+    Write-WinUtilLog -Component "Tweaks" -Message "$action tweak completed: $CheckBox"
 }

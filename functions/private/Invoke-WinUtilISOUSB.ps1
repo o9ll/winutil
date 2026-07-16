@@ -61,6 +61,7 @@ function Invoke-WinUtilISOWriteUSB {
     }
 
     $sync["WPFWin11ISOWriteUSBButton"].IsEnabled = $false
+    $sync["Win11ISOProcessRunning"] = $true
     Write-Win11ISOLog "Starting USB write to Disk $diskNum..."
 
     $runspace = [Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
@@ -86,9 +87,10 @@ function Invoke-WinUtilISOWriteUSB {
 
         function SetProgress($label, $pct) {
             $sync["WPFWin11ISOStatusLog"].Dispatcher.Invoke([action]{
-                $sync.progressBarTextBlock.Text    = $label
-                $sync.progressBarTextBlock.ToolTip = $label
-                $sync.ProgressBar.Value            = [Math]::Max($pct, 5)
+                $sync["WPFTweaksProgressBar"].Visibility = "Visible"
+                $sync["WPFTweaksProgressLabel"].Text      = $label
+                $sync["WPFTweaksProgressLabel"].ToolTip   = $label
+                $sync["WPFTweaksProgressValue"].Value     = [Math]::Max($pct, 5)
             })
         }
 
@@ -180,7 +182,7 @@ function Invoke-WinUtilISOWriteUSB {
             Start-Sleep -Seconds 2
             Update-Disk -Number $diskNum
 
-            try { Remove-PartitionAccessPath -DiskNumber $diskNum -PartitionNumber $winpePart.PartitionNumber -AccessPath "$($winpePart.DriveLetter):" } catch {}
+            try { Remove-PartitionAccessPath -DiskNumber $diskNum -PartitionNumber $winpePart.PartitionNumber -AccessPath "$($winpePart.DriveLetter):" } catch { Log "Warning: could not remove existing partition access path: $_" }
             $usbLetter = Get-FreeDriveLetter
             if (-not $usbLetter) { throw "No free drive letters (D-Z) available to assign to the USB data partition." }
             Set-Partition -DiskNumber $diskNum -PartitionNumber $winpePart.PartitionNumber -NewDriveLetter $usbLetter
@@ -255,10 +257,12 @@ function Invoke-WinUtilISOWriteUSB {
             })
         } finally {
             Start-Sleep -Milliseconds 800
+            $sync["Win11ISOProcessRunning"] = $false
             $sync["WPFWin11ISOStatusLog"].Dispatcher.Invoke([action]{
-                $sync.progressBarTextBlock.Text    = ""
-                $sync.progressBarTextBlock.ToolTip = ""
-                $sync.ProgressBar.Value            = 0
+                $sync["WPFTweaksProgressBar"].Visibility = "Collapsed"
+                $sync["WPFTweaksProgressLabel"].Text      = ""
+                $sync["WPFTweaksProgressLabel"].ToolTip   = ""
+                $sync["WPFTweaksProgressValue"].Value     = 0
                 $sync["WPFWin11ISOWriteUSBButton"].IsEnabled = $true
             })
         }

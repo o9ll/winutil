@@ -1,12 +1,13 @@
 function Write-Win11ISOLog {
     param([string]$Message)
     $ts = (Get-Date).ToString("HH:mm:ss")
+    $logLine = "[$ts] $Message"
     $sync["WPFWin11ISOStatusLog"].Dispatcher.Invoke([action]{
         $current = $sync["WPFWin11ISOStatusLog"].Text
         if ($current -eq "Ready. Please select a Windows 11 ISO to begin.") {
-            $sync["WPFWin11ISOStatusLog"].Text = "[$ts] $Message"
+            $sync["WPFWin11ISOStatusLog"].Text = $logLine
         } else {
-            $sync["WPFWin11ISOStatusLog"].Text += "`n[$ts] $Message"
+            $sync["WPFWin11ISOStatusLog"].Text += "`n$logLine"
         }
         $sync["WPFWin11ISOStatusLog"].CaretIndex = $sync["WPFWin11ISOStatusLog"].Text.Length
         $sync["WPFWin11ISOStatusLog"].ScrollToEnd()
@@ -46,7 +47,7 @@ function Invoke-WinUtilISOMountAndVerify {
     }
 
     Write-Win11ISOLog "Mounting ISO: $isoPath"
-    Set-WinUtilProgressBar -Label "Mounting ISO..." -Percent 10
+    Set-WinUtilTweaksProgressIndicator -Visible $true -Label "Mounting ISO..." -Percent 10
 
     try {
         Mount-DiskImage -ImagePath $isoPath
@@ -58,7 +59,7 @@ function Invoke-WinUtilISOMountAndVerify {
         $driveLetter = (Get-DiskImage -ImagePath $isoPath | Get-Volume).DriveLetter + ":"
         Write-Win11ISOLog "Mounted at drive $driveLetter"
 
-        Set-WinUtilProgressBar -Label "Verifying ISO contents..." -Percent 30
+        Set-WinUtilTweaksProgressIndicator -Visible $true -Label "Verifying ISO contents..." -Percent 30
 
         $wimPath = Join-Path $driveLetter "sources\install.wim"
         $esdPath = Join-Path $driveLetter "sources\install.esd"
@@ -69,13 +70,13 @@ function Invoke-WinUtilISOMountAndVerify {
             [System.Windows.MessageBox]::Show(
                 "This does not appear to be a valid Windows ISO.`n`ninstall.wim / install.esd was not found.",
                 "Invalid ISO", "OK", "Error")
-            Set-WinUtilProgressBar -Label "" -Percent 0
+            Set-WinUtilTweaksProgressIndicator -Visible $false
             return
         }
 
         $activeWim = if (Test-Path $wimPath) { $wimPath } else { $esdPath }
 
-        Set-WinUtilProgressBar -Label "Reading image metadata..." -Percent 55
+        Set-WinUtilTweaksProgressIndicator -Visible $true -Label "Reading image metadata..." -Percent 55
         $imageInfo = Get-WindowsImage -ImagePath $activeWim | Select-Object ImageIndex, ImageName
 
         if (-not ($imageInfo | Where-Object { $_.ImageName -match "Windows 11" })) {
@@ -84,7 +85,7 @@ function Invoke-WinUtilISOMountAndVerify {
             [System.Windows.MessageBox]::Show(
                 "No Windows 11 edition was found in this ISO.`n`nOnly official Windows 11 ISOs are supported.",
                 "Not a Windows 11 ISO", "OK", "Error")
-            Set-WinUtilProgressBar -Label "" -Percent 0
+            Set-WinUtilTweaksProgressIndicator -Visible $false
             return
         }
 
@@ -113,7 +114,7 @@ function Invoke-WinUtilISOMountAndVerify {
         $sync["Win11ISOImagePath"]   = $isoPath
         $sync["WPFWin11ISOModifySection"].Visibility = "Visible"
 
-        Set-WinUtilProgressBar -Label "ISO verified" -Percent 100
+        Set-WinUtilTweaksProgressIndicator -Visible $true -Label "ISO verified" -Percent 100
         Write-Win11ISOLog "ISO verified OK.  Editions found: $($imageInfo.Count)"
     } catch {
         Write-Win11ISOLog "ERROR during mount/verify: $_"
@@ -122,7 +123,7 @@ function Invoke-WinUtilISOMountAndVerify {
             "Error", "OK", "Error")
     } finally {
         Start-Sleep -Milliseconds 800
-        Set-WinUtilProgressBar -Label "" -Percent 0
+        Set-WinUtilTweaksProgressIndicator -Visible $false
     }
 }
 
@@ -150,15 +151,11 @@ function Invoke-WinUtilISOModify {
 
     $sync["WPFWin11ISOModifyButton"].IsEnabled = $false
     $sync["Win11ISOModifying"] = $true
+    $sync["Win11ISOProcessRunning"] = $true
 
-    $existingWorkDir = Get-Item -Path (Join-Path $env:TEMP "WinUtil_Win11ISO*") |
-        Where-Object { $_.PSIsContainer } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-
-    $workDir = if ($existingWorkDir) {
-        Write-Win11ISOLog "Reusing existing temp directory: $($existingWorkDir.FullName)"
-        $existingWorkDir.FullName
-    } else {
-        Join-Path $env:TEMP "WinUtil_Win11ISO_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+    $workDir = Join-Path $env:TEMP "WinUtil_Win11ISO_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+    if (Test-Path $workDir) {
+        $workDir = Join-Path $env:TEMP "WinUtil_Win11ISO_$(Get-Date -Format 'yyyyMMdd_HHmmss')_$(([guid]::NewGuid()).ToString('N').Substring(0, 8))"
     }
 
     $autounattendContent = if ($WinUtilAutounattendXml) {
@@ -207,10 +204,64 @@ function Invoke-WinUtilISOModify {
 
         function SetProgress($label, $pct) {
             $sync["WPFWin11ISOStatusLog"].Dispatcher.Invoke([action]{
-                $sync.progressBarTextBlock.Text    = $label
-                $sync.progressBarTextBlock.ToolTip = $label
-                $sync.ProgressBar.Value            = [Math]::Max($pct, 5)
+                $sync["WPFTweaksProgressBar"].Visibility = "Visible"
+                $sync["WPFTweaksProgressLabel"].Text      = $label
+                $sync["WPFTweaksProgressLabel"].ToolTip   = $label
+                $sync["WPFTweaksProgressValue"].Value     = [Math]::Max($pct, 5)
             })
+        }
+
+        function Get-WinUtilEditionIdFromName {
+            param([string]$EditionName)
+
+            $normalizedName = ($EditionName -replace '^Windows\s+11\s+', '').Trim()
+            switch -Regex ($normalizedName) {
+                '^Home Single Language$'      { return 'CoreSingleLanguage' }
+                '^Home N$'                    { return 'CoreN' }
+                '^Home$'                      { return 'Core' }
+                '^Pro for Workstations N$'    { return 'ProfessionalWorkstationN' }
+                '^Pro for Workstations$'      { return 'ProfessionalWorkstation' }
+                '^Pro Education N$'           { return 'ProfessionalEducationN' }
+                '^Pro Education$'             { return 'ProfessionalEducation' }
+                '^Pro N$'                     { return 'ProfessionalN' }
+                '^Pro$'                       { return 'Professional' }
+                '^Education N$'               { return 'EducationN' }
+                '^Education$'                 { return 'Education' }
+                '^Enterprise LTSC N$'         { return 'EnterpriseSN' }
+                '^Enterprise LTSC$'           { return 'EnterpriseS' }
+                '^Enterprise N$'              { return 'EnterpriseN' }
+                '^Enterprise$'                { return 'Enterprise' }
+                default                       { return '' }
+            }
+        }
+
+        function Get-WinUtilMountedImageEditionId {
+            param(
+                [Parameter(Mandatory)][string]$MountDir,
+                [string]$EditionName,
+                [scriptblock]$Logger
+            )
+
+            try {
+                $dismOutput = & dism /English "/Image:$MountDir" /Get-CurrentEdition 2>&1
+                foreach ($line in $dismOutput) {
+                    if ($line -match '^\s*Current Edition\s*:\s*(.+?)\s*$') {
+                        $editionId = $Matches[1].Trim()
+                        if ($editionId) {
+                            if ($Logger) { $null = $Logger.Invoke("Detected mounted image EditionID: $editionId") }
+                            return $editionId
+                        }
+                    }
+                }
+            } catch {
+                if ($Logger) { $null = $Logger.Invoke("Warning: could not detect mounted image EditionID with DISM: $_") }
+            }
+
+            $fallbackEditionId = Get-WinUtilEditionIdFromName -EditionName $EditionName
+            if ($fallbackEditionId -and $Logger) {
+                $null = $Logger.Invoke("Using fallback EditionID '$fallbackEditionId' from selected edition name.")
+            }
+            return $fallbackEditionId
         }
 
         function Get-DismImageInfoMap {
@@ -240,9 +291,11 @@ function Invoke-WinUtilISOModify {
                 [scriptblock]$Logger
             )
 
+            $metadataLogger = $Logger
+
             function LogMeta([string]$Message) {
-                if ($Logger) {
-                    $null = $Logger.Invoke($Message)
+                if ($metadataLogger) {
+                    $null = $metadataLogger.Invoke($Message)
                 }
             }
 
@@ -315,16 +368,20 @@ function Invoke-WinUtilISOModify {
             Log "ISO contents copied."
             SetProgress "Mounting install.wim..." 25
 
-            $localWim = Join-Path $isoContents "sources\install.wim"
-            if (-not (Test-Path $localWim)) { $localWim = Join-Path $isoContents "sources\install.esd" }
+            $sourceImageFileName = Split-Path $wimPath -Leaf
+            $localWim = Join-Path $isoContents "sources\$sourceImageFileName"
+            if (-not (Test-Path $localWim)) {
+                throw "Copied ISO image file not found: sources\$sourceImageFileName"
+            }
             Set-ItemProperty -Path $localWim -Name IsReadOnly -Value $false
 
             Log "Mounting install.wim (Index ${selectedWimIndex}: $selectedEditionName) at $mountDir..."
             Mount-WindowsImage -ImagePath $localWim -Index $selectedWimIndex -Path $mountDir
             SetProgress "Modifying install.wim..." 45
+            $selectedEditionId = Get-WinUtilMountedImageEditionId -MountDir $mountDir -EditionName $selectedEditionName -Logger ${function:Log}
 
             Log "Applying WinUtil modifications to install.wim..."
-            Invoke-WinUtilISOScript -ScratchDir $mountDir -ISOContentsDir $isoContents -AutoUnattendXml $autounattendContent -InjectCurrentSystemDrivers $injectDrivers -Log { param($m) Log $m }
+            Invoke-WinUtilISOScript -ScratchDir $mountDir -ISOContentsDir $isoContents -AutoUnattendXml $autounattendContent -InjectCurrentSystemDrivers $injectDrivers -InstallEditionId $selectedEditionId -InstallImageIndex 1 -Log { param($m) Log $m }
 
             SetProgress "Cleaning up component store (WinSxS)..." 56
             Log "Running DISM component store cleanup (/ResetBase)..."
@@ -397,10 +454,12 @@ function Invoke-WinUtilISOModify {
         } finally {
             Start-Sleep -Milliseconds 800
             $sync["Win11ISOModifying"] = $false
+            $sync["Win11ISOProcessRunning"] = $false
             $sync["WPFWin11ISOStatusLog"].Dispatcher.Invoke([action]{
-                $sync.progressBarTextBlock.Text    = ""
-                $sync.progressBarTextBlock.ToolTip = ""
-                $sync.ProgressBar.Value            = 0
+                $sync["WPFTweaksProgressBar"].Visibility = "Collapsed"
+                $sync["WPFTweaksProgressLabel"].Text      = ""
+                $sync["WPFTweaksProgressLabel"].ToolTip   = ""
+                $sync["WPFTweaksProgressValue"].Value     = 0
                 $sync["WPFWin11ISOModifyButton"].IsEnabled = $true
                 if ($sync["WPFWin11ISOOutputSection"].Visibility -ne "Visible") {
                     $sync["WPFWin11ISOSelectSection"].Visibility = "Visible"
@@ -459,6 +518,7 @@ function Invoke-WinUtilISOCleanAndReset {
     }
 
     $sync["WPFWin11ISOCleanResetButton"].IsEnabled = $false
+    $sync["Win11ISOProcessRunning"] = $true
 
     $runspace = [Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
     $runspace.ApartmentState = "STA"
@@ -483,9 +543,10 @@ function Invoke-WinUtilISOCleanAndReset {
 
         function SetProgress($label, $pct) {
             $sync["WPFWin11ISOStatusLog"].Dispatcher.Invoke([action]{
-                $sync.progressBarTextBlock.Text    = $label
-                $sync.progressBarTextBlock.ToolTip = $label
-                $sync.ProgressBar.Value            = [Math]::Max($pct, 5)
+                $sync["WPFTweaksProgressBar"].Visibility = "Visible"
+                $sync["WPFTweaksProgressLabel"].Text      = $label
+                $sync["WPFTweaksProgressLabel"].ToolTip   = $label
+                $sync["WPFTweaksProgressValue"].Value     = [Math]::Max($pct, 5)
             })
         }
 
@@ -536,10 +597,10 @@ function Invoke-WinUtilISOCleanAndReset {
                 }
 
                 foreach ($d in $allDirs) {
-                    try { Remove-Item -Path $d.FullName -Force } catch {}
+                    try { Remove-Item -Path $d.FullName -Force } catch { Log "WARNING: could not delete $($d.FullName): $_" }
                 }
 
-                try { Remove-Item -Path $workDir -Recurse -Force } catch {}
+                try { Remove-Item -Path $workDir -Recurse -Force } catch { Log "WARNING: could not delete temp directory ${workDir}: $_" }
 
                 if (Test-Path $workDir) {
                     Log "WARNING: some items could not be deleted in $workDir"
@@ -573,20 +634,24 @@ function Invoke-WinUtilISOCleanAndReset {
                 $sync["WPFWin11ISOModifyButton"].IsEnabled       = $true
                 $sync["WPFWin11ISOCleanResetButton"].IsEnabled   = $true
 
-                $sync.progressBarTextBlock.Text    = ""
-                $sync.progressBarTextBlock.ToolTip = ""
-                $sync.ProgressBar.Value            = 0
+                $sync["WPFTweaksProgressBar"].Visibility = "Collapsed"
+                $sync["WPFTweaksProgressLabel"].Text      = ""
+                $sync["WPFTweaksProgressLabel"].ToolTip   = ""
+                $sync["WPFTweaksProgressValue"].Value     = 0
 
                 $sync["WPFWin11ISOStatusLog"].Text   = "Ready. Please select a Windows 11 ISO to begin."
             })
         } catch {
             Log "ERROR during Clean & Reset: $_"
             $sync["WPFWin11ISOStatusLog"].Dispatcher.Invoke([action]{
-                $sync.progressBarTextBlock.Text    = ""
-                $sync.progressBarTextBlock.ToolTip = ""
-                $sync.ProgressBar.Value            = 0
+                $sync["WPFTweaksProgressBar"].Visibility = "Collapsed"
+                $sync["WPFTweaksProgressLabel"].Text      = ""
+                $sync["WPFTweaksProgressLabel"].ToolTip   = ""
+                $sync["WPFTweaksProgressValue"].Value     = 0
                 $sync["WPFWin11ISOCleanResetButton"].IsEnabled = $true
             })
+        } finally {
+            $sync["Win11ISOProcessRunning"] = $false
         }
     })
 
@@ -651,6 +716,7 @@ function Invoke-WinUtilISOExport {
     }
 
     $sync["WPFWin11ISOChooseISOButton"].IsEnabled = $false
+    $sync["Win11ISOProcessRunning"] = $true
 
     $runspace = [Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
     $runspace.ApartmentState = "STA"
@@ -671,9 +737,10 @@ function Invoke-WinUtilISOExport {
 
         function SetProgress($label, $pct) {
             $sync["WPFWin11ISOStatusLog"].Dispatcher.Invoke([action]{
-                $sync.progressBarTextBlock.Text    = $label
-                $sync.progressBarTextBlock.ToolTip = $label
-                $sync.ProgressBar.Value            = [Math]::Max($pct, 5)
+                $sync["WPFTweaksProgressBar"].Visibility = "Visible"
+                $sync["WPFTweaksProgressLabel"].Text      = $label
+                $sync["WPFTweaksProgressLabel"].ToolTip   = $label
+                $sync["WPFTweaksProgressValue"].Value     = [Math]::Max($pct, 5)
             })
         }
 
@@ -733,10 +800,12 @@ function Invoke-WinUtilISOExport {
             })
         } finally {
             Start-Sleep -Milliseconds 800
+            $sync["Win11ISOProcessRunning"] = $false
             $sync["WPFWin11ISOStatusLog"].Dispatcher.Invoke([action]{
-                $sync.progressBarTextBlock.Text    = ""
-                $sync.progressBarTextBlock.ToolTip = ""
-                $sync.ProgressBar.Value            = 0
+                $sync["WPFTweaksProgressBar"].Visibility = "Collapsed"
+                $sync["WPFTweaksProgressLabel"].Text      = ""
+                $sync["WPFTweaksProgressLabel"].ToolTip   = ""
+                $sync["WPFTweaksProgressValue"].Value     = 0
                 $sync["WPFWin11ISOChooseISOButton"].IsEnabled = $true
             })
         }

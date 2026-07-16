@@ -937,26 +937,69 @@ foreach( `$drive in [System.IO.DriveInfo]::GetDrives() ) {
     `$complete += `$increment;
   }
 } *&gt;&amp;1 | Out-String -Width 1KB -Stream &gt;&gt; "C:\Windows\Setup\Scripts\DefaultUser.log";
-		</File>
-		<File path="C:\Windows\Setup\Scripts\FirstLogon.ps1">
-`$scripts = @(
-	{
-		Set-ItemProperty -LiteralPath 'Registry::HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' -Name 'AutoLogonCount' -Type 'DWord' -Force -Value 0;
-	};
-	{
-		@(
-			Get-ChildItem -LiteralPath 'C:\' -Force;
-			Get-ChildItem -LiteralPath 'C:\Users' -Force;
-			Get-ChildItem -LiteralPath 'C:\Users\Default' -Force -Recurse -Depth 2;
-			Get-ChildItem -LiteralPath 'C:\Users\Public' -Force -Recurse -Depth 2;
-			Get-ChildItem -LiteralPath 'C:\ProgramData' -Force;
-		) | Where-Object -FilterScript {
-			`$_.Attributes.HasFlag( [System.IO.FileAttributes]::ReparsePoint );
-		} | Remove-Item -Force -Recurse -Verbose;
-	};
-	{
-		cmd.exe /c "rmdir C:\Windows.old";
-	};
+        </File>
+        <File path="C:\Windows\Setup\Scripts\FirstLogon.ps1">
+$scripts = @(
+    {
+        Remove-Item -LiteralPath @(
+          'C:\Windows\Panther\unattend.xml';
+          'C:\Windows\Panther\unattend-original.xml';
+          'C:\Windows\Setup\Scripts\Wifi.xml';
+          'C:\Windows.old';
+        ) -Recurse -Force -ErrorAction 'SilentlyContinue';
+    };
+    {
+        reg.exe delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v OneDriveSetup /f;
+        reg.exe delete "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" /v NoAutoUpdate /f;
+        reg.exe delete "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" /v AUOptions /f;
+        reg.exe delete "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" /v UseWUServer /f;
+        reg.exe delete "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate" /v DisableWindowsUpdateAccess /f;
+        reg.exe delete "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate" /v WUServer /f;
+        reg.exe delete "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate" /v WUStatusServer /f;
+        reg.exe delete "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\DeliveryOptimization\Config" /v DODownloadMode /f;
+        reg.exe add "HKLM\Software\Policies\Microsoft\Windows\OneDrive" /v DisableFileSyncNGSC /t REG_DWORD /d 0 /f;
+        reg.exe add "HKCU\Software\Microsoft\Windows\CurrentVersion\GameDVR" /v AppCaptureEnabled /t REG_DWORD /d 0 /f;
+        $services = @{ BITS = 'Manual'; wuauserv = 'Manual'; UsoSvc = 'Automatic'; WaaSMedicSvc = 'Manual' };
+        foreach ($name in $services.Keys) {
+            Set-Service -Name $name -StartupType $services[$name] -ErrorAction SilentlyContinue;
+        }
+    };
+    {
+        reg.exe add "HKLM\SOFTWARE\Microsoft\PolicyManager\current\device\Education" /f;
+        reg.exe add "HKLM\SOFTWARE\Microsoft\PolicyManager\current\device\Start" /f;
+        reg.exe add "HKLM\SOFTWARE\Policies\Microsoft\Windows\Explorer" /f;
+        reg.exe add "HKLM\SOFTWARE\Microsoft\PolicyManager\current\device\Education" /v IsEducationEnvironment /t REG_DWORD /d 1 /f;
+        reg.exe add "HKLM\SOFTWARE\Policies\Microsoft\Windows\Explorer" /v HideRecommendedSection /t REG_DWORD /d 1 /f;
+        reg.exe add "HKLM\SOFTWARE\Microsoft\PolicyManager\current\device\Start" /v HideRecommendedSection /t REG_DWORD /d 1 /f;
+    };
+    {
+        $recallFeature = Get-WindowsOptionalFeature -Online -ErrorAction SilentlyContinue | Where-Object { $_.State -eq 'Enabled' -and $_.FeatureName -like 'Recall' };
+        if( $recallFeature ) {
+            Disable-WindowsOptionalFeature -Online -FeatureName 'Recall' -Remove -ErrorAction SilentlyContinue;
+        }
+    };
+    {
+        $viveDir = Join-Path $env:TEMP 'ViVeTool';
+        $viveZip = Join-Path $env:TEMP 'ViVeTool.zip';
+        Invoke-WebRequest 'https://github.com/thebookisclosed/ViVe/releases/download/v0.3.4/ViVeTool-v0.3.4-IntelAmd.zip' -OutFile $viveZip;
+        Expand-Archive -Path $viveZip -DestinationPath $viveDir -Force;
+        Remove-Item -Path $viveZip -Force;
+        Start-Process -FilePath (Join-Path $viveDir 'ViVeTool.exe') -ArgumentList '/disable /id:47205210' -Wait -NoNewWindow;
+        Remove-Item -Path $viveDir -Recurse -Force;
+    };
+    {
+        Start-Process C:\Windows\System32\OneDriveSetup.exe -ArgumentList /uninstall
+    };
+    {
+        if( (Get-BitLockerVolume -MountPoint $Env:SystemDrive).ProtectionStatus -eq 'On' ) {
+            Disable-BitLocker -MountPoint $Env:SystemDrive;
+        }
+    };
+    {
+        if( (bcdedit | Select-String 'path').Count -eq 2 ) {
+            bcdedit /set `{bootmgr`} timeout 0;
+        }
+    };
 );
 
 &amp; {
